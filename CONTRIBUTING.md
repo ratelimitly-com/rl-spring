@@ -71,10 +71,12 @@ examples, fixtures, issue reports, and logs.
 
 The present release workflow creates GitHub release assets for intentional
 numeric versions; it is not a Maven Central publication pipeline. Package
-publication, the artifact set, and the clean public transition remain separate
-readiness tasks. Never publish the sample app as a Maven Central library.
+publication and the artifact set remain separate from this public source
+repository. Never publish the sample app as a Maven Central library.
 
-PR checks need no private credentials. Dependabot updates and security findings
-are reviewed changes, not permission to publish or auto-merge dependencies.
+PR checks, including those from public forks, need no private credentials.
+Contributors do not need a production API key or access to a private repository
+to run the documented checks. Dependabot updates and security findings are
+reviewed changes, not permission to publish or auto-merge dependencies.
 
 For vulnerabilities, follow [SECURITY.md](SECURITY.md), not a public issue.
