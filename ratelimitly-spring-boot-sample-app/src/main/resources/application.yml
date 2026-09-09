@@ -1,0 +1,20 @@
+server:
+  port: 8080
+
+ratelimitly:
+  enabled: ${RATELIMITLY_ENABLED:false}
+  api-key: ${RATELIMITLY_API_KEY:}
+  emit-default-metrics-label: true
+  servlet:
+    interceptor-enabled: true
+    filter-enabled: false
+    default-bucket-prefix: sample-http
+    default-window: 1s
+    default-rate-limit: 10
+    default-tokens-requested: 1
+  method:
+    enabled: true
+    default-bucket-prefix: sample-method
+    default-window: 1s
+    default-rate-limit: 10
+    default-tokens-requested: 1

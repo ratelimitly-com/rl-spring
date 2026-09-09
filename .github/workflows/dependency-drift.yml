@@ -1,0 +1,137 @@
+name: dependency drift
+
+on:
+  schedule:
+    - cron: '37 6 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: dependency-drift
+  cancel-in-progress: true
+
+env:
+  # Kept in sync with .github/workflows/ci.yml.
+  # Public Java client 3.0.0-SNAPSHOT; no cross-repository secret is needed.
+  RL_JAVA_CLIENT_COMMIT: fb0b26f1e514188a569eaf8fab5685c562111bac
+  RL_JAVA_CLIENT_DIR: _deps/rl-java-client
+
+jobs:
+  java-client-main:
+    # The highest value job here. com.ratelimitly:ratelimitly-java-client is not in a Maven
+    # repository, so nothing but this job notices when rl-java-client main moves away from
+    # the commit ci.yml pins.
+    name: rl-java-client/main (JDK ${{ matrix.java }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        java:
+          - '21'
+          - '25'
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Check out rl-java-client main
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ratelimitly-com/rl-java-client
+          ref: main
+          path: ${{ env.RL_JAVA_CLIENT_DIR }}
+          persist-credentials: false
+
+      - name: Set up JDK ${{ matrix.java }}
+        uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5.7.0
+        with:
+          distribution: temurin
+          java-version: ${{ matrix.java }}
+          cache: maven
+
+      - name: Install rl-java-client main
+        run: |
+          set -eu
+          resolved=$(git -C "$RL_JAVA_CLIENT_DIR" rev-parse HEAD)
+          echo "rl-java-client/main commit: $resolved" >> "$GITHUB_STEP_SUMMARY"
+          echo "rl-java-client pinned in ci.yml: $RL_JAVA_CLIENT_COMMIT" >> "$GITHUB_STEP_SUMMARY"
+          mvn -B -ntp -f "$RL_JAVA_CLIENT_DIR/pom.xml" install
+          version=$(mvn -B -ntp -q -f "$RL_JAVA_CLIENT_DIR/pom.xml" \
+            org.apache.maven.plugins:maven-help-plugin:3.5.2:evaluate \
+            -Dexpression=project.version -DforceStdout | tail -n 1 | tr -d '[:space:]')
+          test -n "$version"
+          echo "JAVA_CLIENT_VERSION=$version" >> "$GITHUB_ENV"
+
+      - name: Build and test against rl-java-client main
+        run: mvn -B -ntp -Dratelimitly-java-client.version="$JAVA_CLIENT_VERSION" install
+
+  latest-spring-boot:
+    # Only Spring Boot moves here; rl-java-client stays on the commit ci.yml pins so a failure
+    # is unambiguously attributable to the Spring Boot upgrade.
+    name: latest Spring Boot (JDK ${{ matrix.java }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        java:
+          - '21'
+          - '25'
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Check out pinned rl-java-client
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ratelimitly-com/rl-java-client
+          ref: ${{ env.RL_JAVA_CLIENT_COMMIT }}
+          path: ${{ env.RL_JAVA_CLIENT_DIR }}
+          persist-credentials: false
+
+      - name: Set up JDK ${{ matrix.java }}
+        uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5.7.0
+        with:
+          distribution: temurin
+          java-version: ${{ matrix.java }}
+          cache: maven
+
+      - name: Resolve latest Spring Boot release
+        # The <latest>/<release> fields of the Maven Central metadata point at pre-releases
+        # (4.2.0-M1 as of 2026-08-21), so only x.y.z GA versions are considered. The step fails
+        # loudly rather than falling back to the in-tree version: a silent fallback would turn
+        # this job into a duplicate of ci.yml without anyone noticing.
+        run: |
+          set -eu
+          metadata_url=https://repo1.maven.org/maven2/org/springframework/boot/spring-boot-dependencies/maven-metadata.xml
+          if ! curl -fsSL --retry 3 "$metadata_url" -o spring-boot-metadata.xml; then
+            echo "::error::could not download $metadata_url"
+            exit 1
+          fi
+          version=$(grep -oE '<version>[0-9]+\.[0-9]+\.[0-9]+</version>' spring-boot-metadata.xml \
+            | sed -e 's|<version>||' -e 's|</version>||' \
+            | sort -V \
+            | tail -n 1 || true)
+          rm -f spring-boot-metadata.xml
+          if [ -z "$version" ]; then
+            echo "::error::no GA Spring Boot release found in $metadata_url"
+            exit 1
+          fi
+          pinned=$(grep -oE '<spring-boot\.version>[^<]+' pom.xml | sed 's|.*>||')
+          echo "SPRING_BOOT_VERSION=$version" >> "$GITHUB_ENV"
+          echo "latest Spring Boot release: $version" >> "$GITHUB_STEP_SUMMARY"
+          echo "Spring Boot pinned in pom.xml: $pinned" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Install pinned rl-java-client
+        run: mvn -B -ntp -f "$RL_JAVA_CLIENT_DIR/pom.xml" install
+
+      - name: Build and test against the latest Spring Boot
+        run: mvn -B -ntp -Dspring-boot.version="$SPRING_BOOT_VERSION" install

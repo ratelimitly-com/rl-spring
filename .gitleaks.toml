@@ -1,0 +1,15 @@
+title = "rl-spring source snapshot secret checks"
+
+[extend]
+useDefault = true
+
+[[rules]]
+id = "ratelimitly-api-key"
+description = "Encoded RateLimitly authenticated API key or root secret"
+regex = '''(?i)\brl-(?:aes|cookie|secret)1[023456789acdefghjklmnpqrstuvwxyz]{20,}\b'''
+keywords = ["rl-aes", "rl-cookie", "rl-secret"]
+
+[[allowlists]]
+description = "Exact public NONE fixtures; no secret material. No path-wide exclusions."
+regexTarget = "secret"
+regexes = ['''^rl-none1qyyqwps9qspsyq2sk8e0sfdp3ys$''']

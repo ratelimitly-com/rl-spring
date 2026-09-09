@@ -1,0 +1,38 @@
+{
+  "name": "main-quality-gates",
+  "target": "branch",
+  "enforcement": "active",
+  "bypass_actors": [],
+  "conditions": {"ref_name": {"include": ["~DEFAULT_BRANCH"], "exclude": []}},
+  "rules": [
+    {"type": "deletion"},
+    {"type": "non_fast_forward"},
+    {
+      "type": "pull_request",
+      "parameters": {
+        "required_approving_review_count": 0,
+        "dismiss_stale_reviews_on_push": true,
+        "require_code_owner_review": false,
+        "require_last_push_approval": false,
+        "require_extra_approval_for_unattributed_changes": false,
+        "required_review_thread_resolution": true,
+        "allowed_merge_methods": ["squash", "merge", "rebase"]
+      }
+    },
+    {
+      "type": "required_status_checks",
+      "parameters": {
+        "strict_required_status_checks_policy": true,
+        "do_not_enforce_on_create": false,
+        "required_status_checks": [
+          {"context": "hygiene", "integration_id": 15368},
+          {"context": "build and test (Linux, JDK 21)", "integration_id": 15368},
+          {"context": "build and test (Linux, JDK 25)", "integration_id": 15368},
+          {"context": "build and test (macOS, JDK 21)", "integration_id": 15368},
+          {"context": "build and test (Windows, JDK 21)", "integration_id": 15368},
+          {"context": "source secret scan", "integration_id": 15368}
+        ]
+      }
+    }
+  ]
+}

@@ -1,0 +1,4 @@
+com.ratelimitly.spring.autoconfigure.RateLimitlyAutoConfiguration
+com.ratelimitly.spring.autoconfigure.RateLimitlyServletAutoConfiguration
+com.ratelimitly.spring.autoconfigure.RateLimitlyMethodAutoConfiguration
+com.ratelimitly.spring.autoconfigure.RateLimitlyObservationAutoConfiguration
