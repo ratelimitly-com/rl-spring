@@ -1,0 +1,68 @@
+name: publish-mvn
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# Preparation only. No credentials, write permissions, or publishing jobs.
+permissions:
+  contents: read
+
+concurrency:
+  group: maven-dry-run-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  # Remove this source-install workaround only after Java 3.0.0 resolves on Central.
+  # Keep aligned with ci.yml, dependency-drift.yml, and security.yml.
+  RL_JAVA_CLIENT_COMMIT: fb0b26f1e514188a569eaf8fab5685c562111bac
+  RL_JAVA_CLIENT_DIR: _deps/rl-java-client
+
+jobs:
+  package:
+    name: Central packaging dry run
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5.7.0
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+      - name: Test exact bundle policy
+        run: python3 scripts/test_central_bundle.py
+      - name: Check out pinned public Java client
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ratelimitly-com/rl-java-client
+          ref: ${{ env.RL_JAVA_CLIENT_COMMIT }}
+          path: ${{ env.RL_JAVA_CLIENT_DIR }}
+          persist-credentials: false
+      - name: Install and test the pinned dependency
+        run: |
+          set -eu
+          test "$(git -C "$RL_JAVA_CLIENT_DIR" rev-parse HEAD)" = "$RL_JAVA_CLIENT_COMMIT"
+          mvn -B -ntp -f "$RL_JAVA_CLIENT_DIR/pom.xml" clean install
+      - name: Test original snapshot reactor and independent consumer
+        run: |
+          set -eu
+          mvn -B -ntp clean install
+          mvn -B -ntp -f integration-tests/consumer/pom.xml clean verify
+      - name: Build, sign, verify, and reproduce the Central bundle against loopback only
+        run: |
+          set -eu
+          export SOURCE_DATE_EPOCH="$(git show -s --format=%ct HEAD)"
+          bash scripts/build-central-dry-run.sh
+          git diff --exit-code
+      - name: Upload synthetic bundle for inspection (not a release)
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: central-dry-run-bundle
+          path: target/central-dry-run-bundle.zip
+          if-no-files-found: error
+          retention-days: 7

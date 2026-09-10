@@ -13,6 +13,12 @@
   <artifactId>ratelimitly-spring-boot-sample-app</artifactId>
   <name>ratelimitly-spring-boot-sample-app</name>
   <description>Sample Spring Boot app for the RateLimitly starter</description>
+  <properties>
+    <maven.deploy.skip>true</maven.deploy.skip>
+    <maven.source.skip>true</maven.source.skip>
+    <maven.javadoc.skip>true</maven.javadoc.skip>
+    <gpg.skip>true</gpg.skip>
+  </properties>
 
   <dependencies>
     <dependency>

@@ -13,6 +13,10 @@
   <artifactId>ratelimitly-spring-boot-starter</artifactId>
   <name>ratelimitly-spring-boot-starter</name>
   <description>Starter for the RateLimitly Spring Boot integration</description>
+  <properties>
+    <maven.source.skip>true</maven.source.skip>
+    <maven.javadoc.skip>true</maven.javadoc.skip>
+  </properties>
 
   <dependencies>
     <dependency>
@@ -25,4 +29,48 @@
       <artifactId>spring-boot-starter</artifactId>
     </dependency>
   </dependencies>
+
+  <profiles>
+    <profile>
+      <id>central-release</id>
+      <build><plugins>
+        <plugin>
+          <groupId>org.apache.maven.plugins</groupId>
+          <artifactId>maven-resources-plugin</artifactId>
+          <executions><execution>
+            <id>starter-package-docs</id><phase>prepare-package</phase>
+            <goals><goal>copy-resources</goal></goals>
+            <configuration>
+              <outputDirectory>${project.build.directory}/central-docs</outputDirectory>
+              <resources>
+                <resource><directory>src/main/package-docs</directory></resource>
+                <resource>
+                  <directory>..</directory><includes><include>LICENSE</include></includes>
+                  <targetPath>META-INF</targetPath>
+                </resource>
+              </resources>
+            </configuration>
+          </execution></executions>
+        </plugin>
+        <plugin>
+          <groupId>org.apache.maven.plugins</groupId>
+          <artifactId>maven-jar-plugin</artifactId>
+          <executions>
+            <execution>
+              <id>starter-sources</id><phase>package</phase><goals><goal>jar</goal></goals>
+              <configuration><classifier>sources</classifier>
+                <classesDirectory>${project.build.directory}/central-docs</classesDirectory>
+              </configuration>
+            </execution>
+            <execution>
+              <id>starter-javadoc</id><phase>package</phase><goals><goal>jar</goal></goals>
+              <configuration><classifier>javadoc</classifier>
+                <classesDirectory>${project.build.directory}/central-docs</classesDirectory>
+              </configuration>
+            </execution>
+          </executions>
+        </plugin>
+      </plugins></build>
+    </profile>
+  </profiles>
 </project>
