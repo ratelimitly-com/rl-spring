@@ -69,10 +69,12 @@ examples, fixtures, issue reports, and logs.
 - Do not change repository visibility, rewrite history, configure credentials,
   or publish packages as incidental work.
 
-The present release workflow creates GitHub release assets for intentional
-numeric versions; it is not a Maven Central publication pipeline. Package
-publication and the artifact set remain separate from this public source
-repository. Never publish the sample app as a Maven Central library.
+The `publish-mvn` workflow currently performs credential-free Central packaging
+dry runs only, including signatures, the exact module allow-list, and two-build
+reproducibility. See [the publication runbook](docs/releasing.md). Neither a
+numeric version change nor a push publishes anything. The actual upload/finalize
+jobs follow the Java client's publication in a separate reviewed change.
+Never publish the sample app as a Maven Central library.
 
 PR checks, including those from public forks, need no private credentials.
 Contributors do not need a production API key or access to a private repository

@@ -1,4 +1,4 @@
-<project xmlns="http://maven.apache.org/POM/4.0.0"
+<project xmlns="http://maven.apache.org/POM/4.0.0" child.project.url.inherit.append.path="false"
          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
   <modelVersion>4.0.0</modelVersion>
@@ -10,6 +10,24 @@
 
   <name>ratelimitly-spring-boot-parent</name>
   <description>Spring Boot integration for the RateLimitly Java client</description>
+  <url>https://github.com/ratelimitly-com/rl-spring</url>
+  <developers>
+    <developer>
+      <id>wojciech-fraczak</id>
+      <name>wojciech-fraczak</name>
+      <email>wojciech@ratelimitly.com</email>
+      <organization>RateLimitly</organization>
+      <organizationUrl>https://ratelimitly.com</organizationUrl>
+    </developer>
+  </developers>
+  <scm child.scm.connection.inherit.append.path="false"
+       child.scm.developerConnection.inherit.append.path="false"
+       child.scm.url.inherit.append.path="false">
+    <connection>scm:git:https://github.com/ratelimitly-com/rl-spring.git</connection>
+    <developerConnection>scm:git:ssh://git@github.com/ratelimitly-com/rl-spring.git</developerConnection>
+    <url>https://github.com/ratelimitly-com/rl-spring</url>
+    <tag>HEAD</tag>
+  </scm>
 
   <licenses>
     <license>
@@ -31,6 +49,10 @@
     <ratelimitly-java-client.version>3.0.0-SNAPSHOT</ratelimitly-java-client.version>
     <maven.compiler.release>${java.version}</maven.compiler.release>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+    <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
+    <project.build.outputTimestamp>2026-01-01T00:00:00Z</project.build.outputTimestamp>
+    <central.skipPublishing>true</central.skipPublishing>
+    <central.baseUrl>https://central.sonatype.com</central.baseUrl>
   </properties>
 
   <dependencyManagement>
@@ -48,6 +70,31 @@
   <build>
     <pluginManagement>
       <plugins>
+        <plugin>
+          <groupId>org.apache.maven.plugins</groupId>
+          <artifactId>maven-clean-plugin</artifactId>
+          <version>3.5.0</version>
+        </plugin>
+        <plugin>
+          <groupId>org.apache.maven.plugins</groupId>
+          <artifactId>maven-resources-plugin</artifactId>
+          <version>3.3.1</version>
+        </plugin>
+        <plugin>
+          <groupId>org.apache.maven.plugins</groupId>
+          <artifactId>maven-jar-plugin</artifactId>
+          <version>3.5.1</version>
+        </plugin>
+        <plugin>
+          <groupId>org.apache.maven.plugins</groupId>
+          <artifactId>maven-install-plugin</artifactId>
+          <version>3.1.4</version>
+        </plugin>
+        <plugin>
+          <groupId>org.apache.maven.plugins</groupId>
+          <artifactId>maven-deploy-plugin</artifactId>
+          <version>3.1.4</version>
+        </plugin>
         <plugin>
           <groupId>org.apache.maven.plugins</groupId>
           <artifactId>maven-surefire-plugin</artifactId>
@@ -70,4 +117,95 @@
       </plugins>
     </pluginManagement>
   </build>
+
+  <profiles>
+    <profile>
+      <id>central-release</id>
+      <build>
+        <resources>
+          <resource><directory>${project.basedir}/src/main/resources</directory></resource>
+          <resource>
+            <directory>${project.basedir}/..</directory>
+            <includes><include>LICENSE</include></includes>
+            <targetPath>META-INF</targetPath>
+          </resource>
+        </resources>
+        <plugins>
+          <plugin>
+            <groupId>org.apache.maven.plugins</groupId>
+            <artifactId>maven-resources-plugin</artifactId>
+            <executions>
+              <execution>
+                <id>javadoc-license</id>
+                <phase>prepare-package</phase>
+                <goals><goal>copy-resources</goal></goals>
+                <configuration>
+                  <outputDirectory>${project.build.directory}/javadoc-resources/doc-files</outputDirectory>
+                  <resources><resource>
+                    <directory>${project.basedir}/..</directory>
+                    <includes><include>LICENSE</include></includes>
+                  </resource></resources>
+                </configuration>
+              </execution>
+            </executions>
+          </plugin>
+          <plugin>
+            <groupId>org.apache.maven.plugins</groupId>
+            <artifactId>maven-source-plugin</artifactId>
+            <version>3.4.0</version>
+            <executions><execution>
+              <id>central-sources</id><phase>package</phase>
+              <goals><goal>jar-no-fork</goal></goals>
+            </execution></executions>
+          </plugin>
+          <plugin>
+            <groupId>org.apache.maven.plugins</groupId>
+            <artifactId>maven-javadoc-plugin</artifactId>
+            <version>3.12.0</version>
+            <configuration>
+              <doclint>all,-missing</doclint>
+              <failOnWarnings>true</failOnWarnings>
+              <javadocDirectory>${project.build.directory}/javadoc-resources</javadocDirectory>
+              <docfilessubdirs>true</docfilessubdirs>
+            </configuration>
+            <executions><execution>
+              <id>central-javadoc</id><phase>package</phase>
+              <goals><goal>jar</goal></goals>
+            </execution></executions>
+          </plugin>
+          <plugin>
+            <groupId>org.apache.maven.plugins</groupId>
+            <artifactId>maven-gpg-plugin</artifactId>
+            <version>3.2.8</version>
+            <configuration>
+              <bestPractices>true</bestPractices>
+              <passphraseEnvName>MAVEN_GPG_PASSPHRASE</passphraseEnvName>
+              <gpgArguments><arg>--pinentry-mode</arg><arg>loopback</arg></gpgArguments>
+            </configuration>
+            <executions><execution>
+              <id>central-sign</id><phase>verify</phase>
+              <goals><goal>sign</goal></goals>
+            </execution></executions>
+          </plugin>
+          <plugin>
+            <groupId>org.sonatype.central</groupId>
+            <artifactId>central-publishing-maven-plugin</artifactId>
+            <version>0.11.0</version>
+            <extensions>true</extensions>
+            <configuration>
+              <publishingServerId>central</publishingServerId>
+              <centralBaseUrl>${central.baseUrl}</centralBaseUrl>
+              <autoPublish>false</autoPublish>
+              <waitUntil>validated</waitUntil>
+              <failOnBuildFailure>true</failOnBuildFailure>
+              <skipPublishing>${central.skipPublishing}</skipPublishing>
+              <excludeArtifacts>
+                <excludeArtifact>ratelimitly-spring-boot-sample-app</excludeArtifact>
+              </excludeArtifacts>
+            </configuration>
+          </plugin>
+        </plugins>
+      </build>
+    </profile>
+  </profiles>
 </project>
