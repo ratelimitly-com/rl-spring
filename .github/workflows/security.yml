@@ -71,10 +71,7 @@ jobs:
         include:
           - {language: java-kotlin, build-mode: manual}
           - {language: actions, build-mode: none}
-    env:
-      # Same public dependency pin as ci.yml/release.yml/dependency-drift.yml.
-      RL_JAVA_CLIENT_COMMIT: fb0b26f1e514188a569eaf8fab5685c562111bac
-      RL_JAVA_CLIENT_DIR: _deps/rl-java-client
+          - {language: python, build-mode: none}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -84,20 +81,6 @@ jobs:
         with:
           distribution: temurin
           java-version: '21'
-      - name: Check out public Java dependency
-        if: matrix.language == 'java-kotlin'
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          repository: ratelimitly-com/rl-java-client
-          ref: ${{ env.RL_JAVA_CLIENT_COMMIT }}
-          path: ${{ env.RL_JAVA_CLIENT_DIR }}
-          persist-credentials: false
-      - name: Install dependency before tracing Spring's build
-        if: matrix.language == 'java-kotlin'
-        run: |
-          set -eu
-          test "$(git -C "$RL_JAVA_CLIENT_DIR" rev-parse HEAD)" = "$RL_JAVA_CLIENT_COMMIT"
-          mvn -B -ntp -f "$RL_JAVA_CLIENT_DIR/pom.xml" install
       - uses: github/codeql-action/init@cdf488f595d80d6e07e03d4674febd5ab45fa938 # v4.37.9
         with:
           languages: ${{ matrix.language }}

@@ -1,82 +1,98 @@
-# Maven Central preparation and release contract
+# Public Maven publication
 
-This repository is not yet publishing Maven artifacts. It remains at
-`2.0.0-SNAPSHOT`, depending on the documented public Java-client snapshot.
-Track completion in [publication issue #3](https://github.com/ratelimitly-com/rl-spring/issues/3).
+Source code, reviews, and CI stay on GitHub. The public GitLab
+[registry project](https://gitlab.com/ratelimitly-com/maven-registry) hosts our Maven
+artifacts without requiring consumer credentials:
 
-## Exact deployment set
-
-All coordinates use `com.ratelimitly` and the same Spring release version:
-
-| Artifact | Contents |
-| --- | --- |
-| `ratelimitly-spring-boot-parent` | Parent POM and signature |
-| `ratelimitly-spring-boot-autoconfigure` | POM, library/source/Javadoc JARs, signatures |
-| `ratelimitly-spring-boot-starter` | POM, starter/source/Javadoc JARs, signatures |
-
-The starter is dependency-only. Its source and documentation archives explain
-that fact and point to the autoconfigure API; no artificial Java class is added.
-All deployable JARs carry the MIT license. The parent must be published because
-the child POMs reference it. Do not flatten away that relationship accidentally.
-
-The sample stays in the reactor and test suite but is excluded from Central
-staging. Both Central's artifact exclusion and the sample's deployment skip are
-explicit. The verifier checks the exact allow-list, hashes, signatures, metadata,
-and JAR contents. Neither the sample nor any RateLimitly server is published.
-
-## Preparation checks
-
-The `publish-mvn` workflow is currently a credential-free packaging dry run on
-PRs, main pushes, and manual dispatch. It cannot publish a GitHub release or
-upload to Central. It builds the full reactor with a disposable signing key,
-generates the actual Central-plugin bundle against a loopback fixture, verifies its
-contents, and compares unsigned release artifacts across clean builds.
-Because the plugin handles snapshots differently, this runs in a temporary copy
-of tracked working-tree files with a synthetic `-dry-run` version. The original
-checkout/POM versions do not change. Add newly created files to Git before running
-the dry run. Its final bundle is `target/central-dry-run-bundle.zip`.
-Plugin 0.11.0 skips staging entirely with `skipPublishing=true`, contrary to its
-description of bundle-only mode. The test therefore uses nonfunctional credentials
-and an ephemeral loopback HTTP fixture that accepts upload/validation requests
-but cannot publish anything. No real Portal credentials or remote publishing
-endpoint are used. The normal POM still defaults to `central.skipPublishing=true`.
-
-Install the pinned public Java dependency as documented in CONTRIBUTING first.
-Then run:
-
-```sh
-python3 scripts/test_central_bundle.py
-bash scripts/build-central-dry-run.sh
+```text
+https://gitlab.com/api/v4/projects/86375734/packages/maven
 ```
 
-These are development checks, not a claim that a snapshot bundle is eligible for
-Central release validation. Do not use production credentials for them.
+## Sequence and exact artifacts
 
-## Rollout after Java publication
+1. Publish and anonymously verify Java client `3.0.0` first.
+2. Merge the Spring change using that published dependency and this repository
+   URL. Require successful exact-main CI, source secret scan, and CodeQL.
+3. Publish Spring `2.0.0` with the manual, approval-gated workflow.
+4. Verify anonymous resolution with a clean standalone consumer before making
+   the GitHub release public.
 
-1. Complete the [Java release](https://github.com/ratelimitly-com/rl-java-client/issues/9)
-   and verify Java `3.0.0` from Central with an empty Maven cache.
-2. Replace the Java snapshot dependency and source-install steps in all Spring
-   workflows/docs with the published coordinate. Run all tests and a Central-only
-   external consumer, including auto-configuration discovery and shutdown.
-3. Extend this workflow with the Java client's reviewed manual stage/finalize
-   approach. Never publish on a numeric-version push. Require the exact reviewed
-   main SHA, CI/security checks, protected-environment approval, and Sonatype
-   namespace/policy/signing prerequisites. Store production credentials only in
-   a main-restricted `maven-central` environment. Clarify Sonatype's current
-   [service-dependent SDK terms](https://central.sonatype.org/publish/producer-terms/)
-   before publishing; do not infer free eligibility from the MIT license alone.
-4. In a separate release PR, select the intended Spring version (planned `2.0.0`),
-   update every parent reference and consumer version, and reject all snapshot
-   runtime dependencies before staging. Use the release tag for SCM metadata.
-5. Stage one bundle containing the parent and two libraries, with
-   `autoPublish=false` and `waitUntil=validated`. Record deployment ID and hashes;
-   inspect then publish that existing deployment in Portal.
-6. Verify public POMs, all JARs, signatures, parent resolution, and a clean
-   Central-only starter consumer before creating the matching GitHub release.
-   A Portal upload is not a public release; a public 404 is not proof that no
-   deployment is in progress. Resume by deployment ID; never overwrite a version.
+| Coordinate (`com.ratelimitly`, same Spring version) | Unsigned artifacts |
+| --- | --- |
+| `ratelimitly-spring-boot-parent` | POM |
+| `ratelimitly-spring-boot-autoconfigure` | POM, library/source/Javadoc JARs |
+| `ratelimitly-spring-boot-starter` | POM, starter/source/Javadoc JARs |
 
-Publishing credentials and upload/finalize jobs are intentionally absent from
-this preparation PR. Maven artifacts, GitHub releases, and source visibility are
-separate decisions. Accepted reporting design debt remains separate in #2.
+Exactly nine unsigned artifacts are signed and verified. The parent is required
+for downstream resolution. The dependency-only starter's source/Javadoc archives
+explain its role and include the MIT license. The sample remains tested in the
+reactor but has `maven.deploy.skip=true`, skips signing, and is rejected by the
+release allow-list. No server artifacts are part of this repository or release.
+
+## Credential-free validation
+
+```sh
+python3 scripts/test_maven_bundle.py
+python3 scripts/test_publication_policy.py
+python3 scripts/test_registry.py
+python3 scripts/test_reviewed_artifacts.py
+SOURCE_DATE_EPOCH=$(git show -s --format=%ct HEAD) bash scripts/build-maven-dry-run.sh
+```
+
+Add new files to Git's index before the dry run: it copies tracked working-tree
+files to a disposable directory. It uses an ephemeral GPG key and an empty Maven
+settings file, then executes two real Maven deployments to a loopback-only HTTP
+fixture. The fixture rejects duplicate artifact uploads. Both full test runs,
+all signatures, MIT notices, POM coordinates, sample exclusion, and unsigned
+byte reproducibility must pass. The second deployment also exercises the
+reviewed-artifact gate. A final negative test changes the reviewed starter POM
+and requires Maven to refuse the whole deployment before any module is uploaded.
+The synthetic bundle is
+`target/maven-dry-run-bundle.zip`; it is not a release.
+
+## Protected publication
+
+Use environment `maven-publication`, restricted to branch main, requiring
+maintainer approval (self-approval allowed), with administrator bypass disabled.
+
+Secrets: `GITLAB_MAVEN_USERNAME`, `GITLAB_MAVEN_TOKEN`,
+`MAVEN_GPG_PRIVATE_KEY`, `MAVEN_GPG_PASSPHRASE`.
+Variables: pinned full `MAVEN_GPG_FINGERPRINT` and
+`MAVEN_PUBLICATION_APPROVED=true` only after readiness and signing-key recovery
+are confirmed. The project-scoped Spring deploy token has package read/write
+access only and expires on 2027-09-12. It can access all coordinates in the
+dedicated project; it is not coordinate-scoped, and package-write also permits
+deletion. Rotate it independently of the Java token.
+
+Dispatch `publish-mvn` from main with `action=publish`, the full
+`expected_commit`, and matching numeric `expected_version`. Before any upload,
+existing package records (including incomplete ones) block publication. Maven
+builds and signs all modules, compares each POM/JAR against the reviewed dry-run
+artifacts, and uses `deployAtEnd` so a later reactor validation failure cannot
+trigger an early module upload. The actual deploy-plugin path is exercised
+against the duplicate-rejecting fixture; no Sonatype plugin is used.
+
+Uploads become public immediately: GitLab has no atomic multi-module staging.
+Duplicate Maven uploads are disabled. Never replace or delete a published version
+to repair it. After an interruption, inspect the registry and logs. If all files
+arrived, `action=finalize` with the same SHA/version verifies them without
+uploading and finishes the GitHub release. Missing files require an explicitly
+reviewed recovery or a new version. Automatic publish reruns are refused.
+Keep main at the release commit until finalization completes.
+
+Verification downloads anonymously, compares unsigned bytes, checks signatures
+against the pinned public key, and runs the standalone consumer with an empty
+Maven cache and settings. GitHub assets contain the POMs/JARs, signatures, public
+key, and SHA256SUMS. Production keys/caches are not exposed to PR jobs; the
+publishing job does not restore a Maven cache and removes its GPG home afterward.
+
+## Distribution decision
+
+Sonatype classified RateLimitly's service-client publishing as commercial and
+quoted an annual subscription on 2026-09-11. We selected GitLab's Free registry;
+there is no Sonatype publication or paid subscription step. The MIT license and
+`com.ratelimitly` coordinates remain unchanged. Third-party dependencies still
+use Maven Central, not a GitLab mirror.
+
+References: [GitLab Maven registry](https://docs.gitlab.com/user/packages/maven_repository/),
+[project deploy tokens](https://docs.gitlab.com/user/project/deploy_tokens/).

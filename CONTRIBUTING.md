@@ -3,25 +3,20 @@
 Contributions are welcome under the [MIT License](LICENSE). Keep changes
 focused, document application-visible behavior, and add regression tests for
 behavioral fixes. The [publication notes](docs/public-readiness-plan.md) distinguish
-the public source release from pending Maven Central publication.
+the public source release from pending Maven registry publication.
 
 ## Build and test
 
 Use a JDK (not just a JRE) version 21 or newer and Maven. Run these commands
-from the `rl-spring` repository root. Until the Java client is published on
-Maven Central, first install its exact public source pin:
+from the `rl-spring` repository root. The POM resolves Java client `3.0.0`
+anonymously from the public GitLab Maven registry. **The Java release must be
+published before this change can merge or a clean CI build can pass.** No
+source-checkout fallback is used in CI.
 
 ```sh
-git clone https://github.com/ratelimitly-com/rl-java-client.git _deps/rl-java-client
-git -C _deps/rl-java-client checkout fb0b26f1e514188a569eaf8fab5685c562111bac
-mvn -B -ntp -f _deps/rl-java-client/pom.xml clean install
 mvn -B -ntp clean install
 mvn -B -ntp -f integration-tests/consumer/pom.xml clean verify
 ```
-
-Clone once into a fresh `_deps/rl-java-client` directory. For later builds,
-verify or fetch the documented pin in that checkout and repeat the Maven
-commands; do not discard local changes to update it. `_deps/` is ignored.
 
 `clean install` runs the tests and installs the parent, autoconfigure, starter,
 and sample artifacts into your local Maven repository. It does not publish to
@@ -32,13 +27,14 @@ The separate consumer has no reactor parent or module membership. It uses the
 installed starter/autoconfigure jars and Boot's auto-configuration discovery to
 test non-web method admission, denial, null arguments, client-only mode, and
 shutdown. Reinstall the reactor before this check after changing library code.
-This checks local snapshot consumption, not Maven Central availability.
+This checks locally built Spring artifacts; publication separately verifies the
+anonymous registry with an empty Maven cache.
 
 The suite uses synthetic credentials, a local UDP responder, Spring test
 contexts, and an embedded Tomcat server on a random local port. Local sockets
 must be permitted. It requires neither a live API key nor production DNS or
 a private RateLimitly server checkout. README Java examples are compiled and checked by
-the documentation tests. GitHub CI also runs the Java dependency's own suite
+the documentation tests. GitHub CI runs the Spring suite against the published Java dependency
 on Linux JDK 21/25, macOS JDK 21, and Windows JDK 21.
 
 ## Scope and documentation
@@ -69,12 +65,12 @@ examples, fixtures, issue reports, and logs.
 - Do not change repository visibility, rewrite history, configure credentials,
   or publish packages as incidental work.
 
-The `publish-mvn` workflow currently performs credential-free Central packaging
-dry runs only, including signatures, the exact module allow-list, and two-build
-reproducibility. See [the publication runbook](docs/releasing.md). Neither a
-numeric version change nor a push publishes anything. The actual upload/finalize
-jobs follow the Java client's publication in a separate reviewed change.
-Never publish the sample app as a Maven Central library.
+The `publish-mvn` workflow performs credential-free dry runs on PRs and pushes:
+two signed Maven deployments to a loopback fixture, exact module allow-list
+validation, and reproducibility. Manual `publish`/`finalize` actions are
+main-only and approval-gated. See [the publication runbook](docs/releasing.md).
+Neither a numeric version change nor a push publishes anything.
+Never publish the sample app or server as a Maven library.
 
 PR checks, including those from public forks, need no private credentials.
 Contributors do not need a production API key or access to a private repository
