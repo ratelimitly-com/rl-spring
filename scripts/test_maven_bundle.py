@@ -8,7 +8,7 @@ import unittest
 import zipfile
 
 SPEC = importlib.util.spec_from_file_location(
-    "verify_central_bundle", pathlib.Path(__file__).with_name("verify_central_bundle.py"))
+    "verify_maven_bundle", pathlib.Path(__file__).with_name("verify_maven_bundle.py"))
 bundle = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(bundle)
 VERSION = "2.0.0-SNAPSHOT"
@@ -30,7 +30,7 @@ def jar():
     return data.getvalue()
 
 
-class CentralBundleTest(unittest.TestCase):
+class MavenBundleTest(unittest.TestCase):
     def entries(self):
         result = {}
         for artifact in bundle.ARTIFACTS:
@@ -99,16 +99,16 @@ class CentralBundleTest(unittest.TestCase):
     def test_metadata_and_deployment_exclusions_are_explicit(self):
         root = pathlib.Path(__file__).resolve().parent.parent
         pom = (root / "pom.xml").read_text()
-        for value in ("<id>central-release</id>", "<developers>", "<scm ",
-                      "<excludeArtifacts>", "<autoPublish>false</autoPublish>",
-                      "<central.skipPublishing>true</central.skipPublishing>"):
+        for value in ("<id>maven-release</id>", "<developers>", "<scm ",
+                      "<id>gitlab-maven</id>", "<deployAtEnd>true</deployAtEnd>"):
             self.assertIn(value, pom)
         sample = (root / "ratelimitly-spring-boot-sample-app/pom.xml").read_text()
         self.assertIn("<maven.deploy.skip>true</maven.deploy.skip>", sample)
         self.assertFalse((root / ".github/workflows/release.yml").exists())
         workflow = (root / ".github/workflows/publish-mvn.yml").read_text()
-        self.assertNotIn("secrets.", workflow)
-        self.assertNotIn("contents: write", workflow)
+        self.assertIn("environment: maven-publication", workflow)
+        self.assertIn("registry.py absent", workflow)
+        self.assertNotIn("sonatype", workflow)
 
 
 if __name__ == "__main__":

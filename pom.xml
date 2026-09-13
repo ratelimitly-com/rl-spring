@@ -5,7 +5,7 @@
 
   <groupId>com.ratelimitly</groupId>
   <artifactId>ratelimitly-spring-boot-parent</artifactId>
-  <version>2.0.0-SNAPSHOT</version>
+  <version>2.0.0</version>
   <packaging>pom</packaging>
 
   <name>ratelimitly-spring-boot-parent</name>
@@ -26,7 +26,7 @@
     <connection>scm:git:https://github.com/ratelimitly-com/rl-spring.git</connection>
     <developerConnection>scm:git:ssh://git@github.com/ratelimitly-com/rl-spring.git</developerConnection>
     <url>https://github.com/ratelimitly-com/rl-spring</url>
-    <tag>HEAD</tag>
+    <tag>v2.0.0</tag>
   </scm>
 
   <licenses>
@@ -46,14 +46,21 @@
   <properties>
     <java.version>21</java.version>
     <spring-boot.version>4.0.5</spring-boot.version>
-    <ratelimitly-java-client.version>3.0.0-SNAPSHOT</ratelimitly-java-client.version>
+    <ratelimitly-java-client.version>3.0.0</ratelimitly-java-client.version>
     <maven.compiler.release>${java.version}</maven.compiler.release>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
     <project.build.outputTimestamp>2026-01-01T00:00:00Z</project.build.outputTimestamp>
-    <central.skipPublishing>true</central.skipPublishing>
-    <central.baseUrl>https://central.sonatype.com</central.baseUrl>
   </properties>
+
+  <repositories>
+    <repository>
+      <id>ratelimitly-public</id>
+      <url>https://gitlab.com/api/v4/projects/86375734/packages/maven</url>
+      <releases><enabled>true</enabled></releases>
+      <snapshots><enabled>false</enabled></snapshots>
+    </repository>
+  </repositories>
 
   <dependencyManagement>
     <dependencies>
@@ -120,7 +127,11 @@
 
   <profiles>
     <profile>
-      <id>central-release</id>
+      <id>maven-release</id>
+      <distributionManagement><repository>
+        <id>gitlab-maven</id>
+        <url>https://gitlab.com/api/v4/projects/86375734/packages/maven</url>
+      </repository></distributionManagement>
       <build>
         <resources>
           <resource><directory>${project.basedir}/src/main/resources</directory></resource>
@@ -154,7 +165,7 @@
             <artifactId>maven-source-plugin</artifactId>
             <version>3.4.0</version>
             <executions><execution>
-              <id>central-sources</id><phase>package</phase>
+              <id>maven-sources</id><phase>package</phase>
               <goals><goal>jar-no-fork</goal></goals>
             </execution></executions>
           </plugin>
@@ -169,7 +180,7 @@
               <docfilessubdirs>true</docfilessubdirs>
             </configuration>
             <executions><execution>
-              <id>central-javadoc</id><phase>package</phase>
+              <id>maven-javadoc</id><phase>package</phase>
               <goals><goal>jar</goal></goals>
             </execution></executions>
           </plugin>
@@ -183,26 +194,32 @@
               <gpgArguments><arg>--pinentry-mode</arg><arg>loopback</arg></gpgArguments>
             </configuration>
             <executions><execution>
-              <id>central-sign</id><phase>verify</phase>
+              <id>maven-sign</id><phase>verify</phase>
               <goals><goal>sign</goal></goals>
             </execution></executions>
           </plugin>
           <plugin>
-            <groupId>org.sonatype.central</groupId>
-            <artifactId>central-publishing-maven-plugin</artifactId>
-            <version>0.11.0</version>
-            <extensions>true</extensions>
-            <configuration>
-              <publishingServerId>central</publishingServerId>
-              <centralBaseUrl>${central.baseUrl}</centralBaseUrl>
-              <autoPublish>false</autoPublish>
-              <waitUntil>validated</waitUntil>
-              <failOnBuildFailure>true</failOnBuildFailure>
-              <skipPublishing>${central.skipPublishing}</skipPublishing>
-              <excludeArtifacts>
-                <excludeArtifact>ratelimitly-spring-boot-sample-app</excludeArtifact>
-              </excludeArtifacts>
-            </configuration>
+            <groupId>org.apache.maven.plugins</groupId>
+            <artifactId>maven-deploy-plugin</artifactId>
+            <configuration><deployAtEnd>true</deployAtEnd></configuration>
+          </plugin>
+          <plugin>
+            <groupId>org.apache.maven.plugins</groupId>
+            <artifactId>maven-antrun-plugin</artifactId>
+            <version>3.2.0</version>
+            <executions><execution>
+              <id>verify-reviewed-artifacts</id><phase>verify</phase>
+              <goals><goal>run</goal></goals>
+              <configuration><target>
+                <exec executable="python3" failonerror="true">
+                  <arg value="${maven.multiModuleProjectDirectory}/scripts/check-reviewed-artifacts.py"/>
+                  <arg value="${release.expectedArtifacts}"/>
+                  <arg value="${project.basedir}"/>
+                  <arg value="${project.artifactId}"/>
+                  <arg value="${project.version}"/>
+                </exec>
+              </target></configuration>
+            </execution></executions>
           </plugin>
         </plugins>
       </build>

@@ -5,26 +5,139 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
+    inputs:
+      action:
+        description: Dry run, publish to GitLab, or finalize an existing upload
+        type: choice
+        options: [dry-run, publish, finalize]
+        default: dry-run
+      expected_commit:
+        description: Full main SHA (required for publish/finalize)
+        type: string
+      expected_version:
+        description: Exact numeric POM version (required for publish/finalize)
+        type: string
 
-# Preparation only. No credentials, write permissions, or publishing jobs.
 permissions:
   contents: read
 
 concurrency:
-  group: maven-dry-run-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: true
+  group: maven-${{ github.event_name == 'workflow_dispatch' && inputs.action != 'dry-run' && 'publication' || github.event.pull_request.number || github.ref }}
+  cancel-in-progress: false
 
 env:
-  # Remove this source-install workaround only after Java 3.0.0 resolves on Central.
-  # Keep aligned with ci.yml, dependency-drift.yml, and security.yml.
-  RL_JAVA_CLIENT_COMMIT: fb0b26f1e514188a569eaf8fab5685c562111bac
-  RL_JAVA_CLIENT_DIR: _deps/rl-java-client
+  MAVEN_HELP_PLUGIN: org.apache.maven.plugins:maven-help-plugin:3.5.2
 
 jobs:
-  package:
-    name: Central packaging dry run
+  metadata:
+    name: Validate release metadata
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    timeout-minutes: 10
+    outputs:
+      build: ${{ steps.metadata.outputs.build }}
+      commit: ${{ steps.metadata.outputs.commit }}
+      epoch: ${{ steps.metadata.outputs.epoch }}
+      action: ${{ steps.metadata.outputs.action }}
+      tag: ${{ steps.metadata.outputs.tag }}
+      version: ${{ steps.metadata.outputs.version }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5.7.0
+        with:
+          distribution: temurin
+          java-version: '21'
+      - name: Test fail-closed publication policy
+        run: |
+          python3 scripts/test_publication_policy.py
+          python3 scripts/test_registry.py
+          python3 scripts/test_mock_maven.py
+      - name: Validate explicit release identity
+        id: metadata
+        env:
+          ACTION: ${{ inputs.action || 'dry-run' }}
+          EXPECTED_COMMIT: ${{ inputs.expected_commit }}
+          EXPECTED_VERSION: ${{ inputs.expected_version }}
+        run: |
+          set -euo pipefail
+          export COMMIT="$(git rev-parse HEAD)"
+          export VERSION="$(mvn -B -ntp -q -DforceStdout "${MAVEN_HELP_PLUGIN}:evaluate" -Dexpression=project.version | tail -n 1 | tr -d '[:space:]')"
+          python3 scripts/publication_policy.py request >> "$GITHUB_OUTPUT"
+          echo "epoch=$(git show -s --format=%ct HEAD)" >> "$GITHUB_OUTPUT"
+
+  preflight:
+    name: Require exact-main CI and CodeQL
+    if: needs.metadata.outputs.action != 'dry-run'
+    needs: metadata
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      checks: read
+      security-events: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Require successful exact-commit checks
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          COMMIT: ${{ needs.metadata.outputs.commit }}
+        run: |
+          set -euo pipefail
+          gh api --paginate --slurp "repos/$GH_REPO/commits/$COMMIT/check-runs?per_page=100" |
+            python3 scripts/publication_policy.py checks "$COMMIT"
+          gh api --paginate --slurp "repos/$GH_REPO/code-scanning/analyses?ref=refs/heads/main&per_page=100" |
+            python3 scripts/publication_policy.py analyses "$COMMIT"
+          gh api --paginate --slurp "repos/$GH_REPO/code-scanning/alerts?state=open&ref=refs/heads/main&per_page=100" |
+            python3 scripts/publication_policy.py alerts
+          tag="v${{ needs.metadata.outputs.version }}"
+          refs="$(git ls-remote --tags origin "refs/tags/$tag" "refs/tags/$tag^{}")"
+          if [ -n "$refs" ]; then
+            resolved="$(printf '%s\n' "$refs" | tail -n 1 | cut -f 1)"
+            test "$resolved" = "$COMMIT"
+          fi
+
+  contracts:
+    name: Maven verification (JDK ${{ matrix.java }})
+    if: needs.metadata.outputs.build == 'true'
+    needs: metadata
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        java:
+          - '21'
+          - '25'
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up JDK ${{ matrix.java }}
+        uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5.7.0
+        with:
+          distribution: temurin
+          java-version: ${{ matrix.java }}
+          cache: maven
+
+      - name: Run Maven verification
+        env:
+          SOURCE_DATE_EPOCH: ${{ needs.metadata.outputs.epoch }}
+        run: |
+          mvn -B -ntp install
+          mvn -B -ntp -f integration-tests/consumer/pom.xml verify
+
+  jars:
+    name: Build signed release dry run
+    needs: metadata
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -34,35 +147,324 @@ jobs:
           distribution: temurin
           java-version: '21'
           cache: maven
-      - name: Test exact bundle policy
-        run: python3 scripts/test_central_bundle.py
-      - name: Check out pinned public Java client
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          repository: ratelimitly-com/rl-java-client
-          ref: ${{ env.RL_JAVA_CLIENT_COMMIT }}
-          path: ${{ env.RL_JAVA_CLIENT_DIR }}
-          persist-credentials: false
-      - name: Install and test the pinned dependency
+      - name: Test bundle boundaries and reviewed-artifact gate
         run: |
-          set -eu
-          test "$(git -C "$RL_JAVA_CLIENT_DIR" rev-parse HEAD)" = "$RL_JAVA_CLIENT_COMMIT"
-          mvn -B -ntp -f "$RL_JAVA_CLIENT_DIR/pom.xml" clean install
-      - name: Test original snapshot reactor and independent consumer
+          python3 scripts/test_maven_bundle.py
+          python3 scripts/test_reviewed_artifacts.py
+      - name: Deploy twice to loopback, verify signatures and reproduce artifacts
+        env:
+          SOURCE_DATE_EPOCH: ${{ needs.metadata.outputs.epoch }}
         run: |
-          set -eu
-          mvn -B -ntp clean install
-          mvn -B -ntp -f integration-tests/consumer/pom.xml clean verify
-      - name: Build, sign, verify, and reproduce the Central bundle against loopback only
-        run: |
-          set -eu
-          export SOURCE_DATE_EPOCH="$(git show -s --format=%ct HEAD)"
-          bash scripts/build-central-dry-run.sh
+          bash scripts/build-maven-dry-run.sh
           git diff --exit-code
-      - name: Upload synthetic bundle for inspection (not a release)
+      - name: Collect the exact reviewed unsigned artifacts
+        run: |
+          python3 - <<'PY'
+          import pathlib, zipfile
+          output = pathlib.Path('release-assets')
+          output.mkdir()
+          with zipfile.ZipFile('target/maven-dry-run-bundle.zip') as bundle:
+              files = [n for n in bundle.namelist() if n.endswith(('.pom', '.jar'))]
+              if len(files) != 9 or len({pathlib.Path(n).name for n in files}) != 9:
+                  raise SystemExit('Invalid artifact set')
+              for name in files:
+                  (output / pathlib.Path(name).name).write_bytes(bundle.read(name))
+          PY
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: release-reactor
+          path: release-assets/*
+          if-no-files-found: error
+          retention-days: 14
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: maven-dry-run-bundle
+          path: target/maven-dry-run-bundle.zip
+          if-no-files-found: error
+          retention-days: 14
+
+  aggregate:
+    name: Validate complete release
+    if: needs.metadata.outputs.build == 'true'
+    needs:
+      - metadata
+      - contracts
+      - jars
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+
+    steps:
+      - name: Download every release artifact
+        uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53 # v6.0.0
+        with:
+          pattern: release-*
+          path: ${{ runner.temp }}/release-inputs
+
+      - name: Reject partial or unexpected release sets
+        shell: bash
+        env:
+          VERSION: ${{ needs.metadata.outputs.version }}
+        run: |
+          set -euo pipefail
+          inputs="$RUNNER_TEMP/release-inputs"
+          assets="$RUNNER_TEMP/release-assets"
+          mkdir -p "$assets"
+
+          # The exact set, not "at least". A release missing the javadoc jar, or carrying a
+          # stray extra file, fails here rather than shipping.
+          expected=("ratelimitly-spring-boot-parent-${VERSION}.pom")
+          for module in ratelimitly-spring-boot-autoconfigure ratelimitly-spring-boot-starter; do
+            for suffix in .pom .jar -sources.jar -javadoc.jar; do
+              expected+=("$module-${VERSION}$suffix")
+            done
+          done
+
+          found=()
+          while IFS= read -r -d '' file; do
+            name="$(basename "$file")"
+            if [[ -e "$assets/$name" ]]; then
+              echo "::error::two build jobs produced an asset named ${name}"
+              exit 1
+            fi
+            cp "$file" "$assets/$name"
+            found+=("$name")
+          done < <(find "$inputs" -type f -print0)
+
+          printf '%s\n' "${expected[@]}" | LC_ALL=C sort > "$RUNNER_TEMP/expected.txt"
+          printf '%s\n' "${found[@]}" | LC_ALL=C sort > "$RUNNER_TEMP/found.txt"
+          if ! diff -u "$RUNNER_TEMP/expected.txt" "$RUNNER_TEMP/found.txt"; then
+            echo "::error::the built assets are not exactly the expected release set"
+            exit 1
+          fi
+
+          ( cd "$assets" && sha256sum ./*.jar ./*.pom | sed 's#\./##' | LC_ALL=C sort -k2 > SHA256SUMS )
+          {
+            echo "### Release assets"
+            echo
+            echo '```'
+            cat "$assets/SHA256SUMS"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload exact release assets
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: central-dry-run-bundle
-          path: target/central-dry-run-bundle.zip
+          name: release-assets
+          path: ${{ runner.temp }}/release-assets/*
           if-no-files-found: error
-          retention-days: 7
+          compression-level: 0
+          retention-days: 14
+
+  registry:
+    name: Publish or verify public Maven registry
+    if: needs.metadata.outputs.action != 'dry-run'
+    needs: [metadata, aggregate, preflight]
+    environment: maven-publication
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.metadata.outputs.commit }}
+          persist-credentials: false
+      - name: Check publication readiness
+        env:
+          APPROVED: ${{ vars.MAVEN_PUBLICATION_APPROVED }}
+          FINGERPRINT: ${{ vars.MAVEN_GPG_FINGERPRINT }}
+        run: |
+          set -euo pipefail
+          test "$APPROVED" = true
+          [[ "$FINGERPRINT" =~ ^[0-9A-Fa-f]{40}$ ]]
+          test "$FINGERPRINT" = 89038DEBDB8BA0A63EA043E577A882D28179BB58
+          mkdir -m 700 -p "$RUNNER_TEMP/release-gnupg"
+          echo "GNUPGHOME=$RUNNER_TEMP/release-gnupg" >> "$GITHUB_ENV"
+      - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5.7.0
+        with:
+          distribution: temurin
+          java-version: '21'
+          server-id: gitlab-maven
+          server-username: GITLAB_MAVEN_USERNAME
+          server-password: GITLAB_MAVEN_TOKEN
+      - uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53 # v6.0.0
+        with:
+          name: release-assets
+          path: release-assets
+      - name: Refuse deployment over any existing package record
+        if: needs.metadata.outputs.action == 'publish'
+        env:
+          VERSION: ${{ needs.metadata.outputs.version }}
+        run: python3 scripts/registry.py absent "$VERSION" ratelimitly-spring-boot-parent ratelimitly-spring-boot-autoconfigure ratelimitly-spring-boot-starter
+      - name: Import dedicated signing key
+        if: needs.metadata.outputs.action == 'publish'
+        env:
+          SIGNING_KEY: ${{ secrets.MAVEN_GPG_PRIVATE_KEY }}
+          FINGERPRINT: ${{ vars.MAVEN_GPG_FINGERPRINT }}
+        run: |
+          set -euo pipefail
+          test -n "$SIGNING_KEY"
+          printf '%s' "$SIGNING_KEY" | gpg --batch --import
+          gpg --batch --list-secret-keys "$FINGERPRINT" >/dev/null
+      - name: Build, compare, sign, and publish to GitLab
+        if: needs.metadata.outputs.action == 'publish'
+        env:
+          GITLAB_MAVEN_USERNAME: ${{ secrets.GITLAB_MAVEN_USERNAME }}
+          GITLAB_MAVEN_TOKEN: ${{ secrets.GITLAB_MAVEN_TOKEN }}
+          MAVEN_GPG_PASSPHRASE: ${{ secrets.MAVEN_GPG_PASSPHRASE }}
+          FINGERPRINT: ${{ vars.MAVEN_GPG_FINGERPRINT }}
+          SOURCE_DATE_EPOCH: ${{ needs.metadata.outputs.epoch }}
+        run: |
+          set -euo pipefail
+          test -n "$GITLAB_MAVEN_USERNAME"
+          test -n "$GITLAB_MAVEN_TOKEN"
+          test -n "$MAVEN_GPG_PASSPHRASE"
+          mvn -B -ntp -Pmaven-release \
+            "-Dgpg.keyname=$FINGERPRINT" \
+            "-Dproject.build.outputTimestamp=$SOURCE_DATE_EPOCH" \
+            "-Drelease.expectedArtifacts=$GITHUB_WORKSPACE/release-assets" \
+            clean deploy
+      - name: Verify anonymous artifacts and pinned signatures
+        env:
+          VERSION: ${{ needs.metadata.outputs.version }}
+          FINGERPRINT: ${{ vars.MAVEN_GPG_FINGERPRINT }}
+        run: |
+          set -euo pipefail
+          gpg --batch --import docs/signing-key.asc
+          python3 scripts/registry.py verify release-assets "$RUNNER_TEMP/verified-assets" "$VERSION" "$FINGERPRINT"
+      - name: Verify anonymous starter resolution using an empty Maven cache
+        run: |
+          set -euo pipefail
+          printf '<settings/>\n' > "$RUNNER_TEMP/anonymous-settings.xml"
+          mvn -B -ntp -U -s "$RUNNER_TEMP/anonymous-settings.xml" \
+            "-Dmaven.repo.local=$RUNNER_TEMP/clean-registry-m2" \
+            -f integration-tests/consumer/pom.xml clean verify
+
+      - name: Upload registry-verified signed release assets
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: verified-release-assets
+          path: ${{ runner.temp }}/verified-assets/*
+          if-no-files-found: error
+          retention-days: 30
+      - name: Remove publishing credentials from the runner
+        if: always()
+        run: |
+          gpgconf --homedir "$RUNNER_TEMP/release-gnupg" --kill all || true
+          rm -rf "$RUNNER_TEMP/release-gnupg"
+          rm -f "$HOME/.m2/settings.xml"
+
+  attest:
+    name: Attest release assets
+    if: >-
+      github.event_name == 'workflow_dispatch' &&
+      github.ref == 'refs/heads/main' &&
+      needs.metadata.outputs.action != 'dry-run'
+    needs:
+      - metadata
+      - aggregate
+      - registry
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+
+    steps:
+      - name: Download exact release assets
+        uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53 # v6.0.0
+        with:
+          name: verified-release-assets
+          path: release-assets
+
+      - name: Create build provenance attestations
+        uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a # v3.0.0
+        with:
+          subject-path: 'release-assets/*'
+
+  publish:
+    name: Publish atomic GitHub release
+    if: >-
+      github.event_name == 'workflow_dispatch' &&
+      github.ref == 'refs/heads/main' &&
+      needs.metadata.outputs.action != 'dry-run'
+    needs:
+      - metadata
+      - aggregate
+      - registry
+      - attest
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+
+    steps:
+      - name: Download exact release assets
+        uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53 # v6.0.0
+        with:
+          name: verified-release-assets
+          path: release-assets
+
+      - name: Upload to a draft, verify, then publish
+        shell: bash
+        env:
+          COMMIT: ${{ needs.metadata.outputs.commit }}
+          GH_REPO: ${{ github.repository }}
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.metadata.outputs.tag }}
+          VERSION: ${{ needs.metadata.outputs.version }}
+        run: |
+          set -euo pipefail
+
+          # Maven publication and clean resolution have already succeeded. Assets land on a
+          # draft first so a partial GitHub upload never becomes visible.
+          find release-assets -maxdepth 1 -type f -printf '%f\n' \
+            | LC_ALL=C sort > "$RUNNER_TEMP/expected-assets.txt"
+
+          notes="$RUNNER_TEMP/release-notes.md"
+          {
+            echo "\`ratelimitly-spring-boot-starter\` ${VERSION}, built from ${COMMIT}."
+            echo
+            echo "Verify the assets with \`sha256sum -c SHA256SUMS\`. The jars are byte-reproducible"
+            echo "from this commit."
+            echo
+            echo "Registry: https://gitlab.com/api/v4/projects/86375734/packages/maven"
+            echo
+            echo "Maven coordinate: \`com.ratelimitly:ratelimitly-spring-boot-starter:${VERSION}\`."
+          } > "$notes"
+
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            if [[ "$(gh release view "$TAG" --json isDraft --jq .isDraft)" != true ]]; then
+              echo "::error::${TAG} is already published; refusing to overwrite it"
+              exit 1
+            fi
+            gh release edit "$TAG" --target "$COMMIT" --title "$TAG" --notes-file "$notes"
+          else
+            gh release create "$TAG" \
+              --draft \
+              --target "$COMMIT" \
+              --title "$TAG" \
+              --notes-file "$notes"
+          fi
+
+          # Assets land on a draft first. A half-uploaded release must never be visible.
+          gh release upload "$TAG" release-assets/* --clobber
+
+          gh release view "$TAG" --json assets --jq '.assets[].name' \
+            | LC_ALL=C sort > "$RUNNER_TEMP/actual-assets.txt"
+          if ! diff -u "$RUNNER_TEMP/expected-assets.txt" "$RUNNER_TEMP/actual-assets.txt"; then
+            echo "::error::${TAG} did not receive every asset; leaving it as a draft"
+            exit 1
+          fi
+
+          # Verify uploaded bytes, not only filenames, before exposing the draft.
+          gh release download "$TAG" --dir "$RUNNER_TEMP/github-release-verification"
+          diff -r release-assets "$RUNNER_TEMP/github-release-verification"
+          (cd "$RUNNER_TEMP/github-release-verification" && sha256sum -c SHA256SUMS)
+          gh release edit "$TAG" --draft=false --latest
+          if [[ "$(gh release view "$TAG" --json isDraft --jq .isDraft)" != false ]]; then
+            echo "::error::${TAG} is still a draft after publishing"
+            exit 1
+          fi
+          echo "Published ${TAG} at ${COMMIT}" >> "$GITHUB_STEP_SUMMARY"

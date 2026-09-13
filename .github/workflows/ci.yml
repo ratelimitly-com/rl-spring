@@ -14,13 +14,6 @@ concurrency:
 permissions:
   contents: read
 
-env:
-  # Temporary public-source pin for Java client 3.0.0-SNAPSHOT compatibility.
-  # Replace source installation with a Central dependency after client publication.
-  # Keep this pin aligned with release.yml, dependency-drift.yml, and security.yml.
-  RL_JAVA_CLIENT_COMMIT: fb0b26f1e514188a569eaf8fab5685c562111bac
-  RL_JAVA_CLIENT_DIR: _deps/rl-java-client
-
 jobs:
   hygiene:
     name: hygiene
@@ -92,28 +85,12 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Check out pinned rl-java-client
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          repository: ratelimitly-com/rl-java-client
-          ref: ${{ env.RL_JAVA_CLIENT_COMMIT }}
-          path: ${{ env.RL_JAVA_CLIENT_DIR }}
-          persist-credentials: false
-
       - name: Set up JDK ${{ matrix.java }}
         uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5.7.0
         with:
           distribution: temurin
           java-version: ${{ matrix.java }}
           cache: maven
-
-      - name: Install pinned rl-java-client
-        run: |
-          set -eu
-          resolved=$(git -C "$RL_JAVA_CLIENT_DIR" rev-parse HEAD)
-          test "$resolved" = "$RL_JAVA_CLIENT_COMMIT"
-          echo "rl-java-client pinned commit: $resolved" >> "$GITHUB_STEP_SUMMARY"
-          mvn -B -ntp -f "$RL_JAVA_CLIENT_DIR/pom.xml" install
 
       - name: Build and test the reactor
         run: mvn -B -ntp install

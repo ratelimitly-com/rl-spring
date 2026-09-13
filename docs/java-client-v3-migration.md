@@ -1,5 +1,8 @@
 # Java client 3.0 compatibility pass
 
+> Historical preparation record. Current dependency, registry, and publication
+> instructions are in [the release runbook](releasing.md) and the README.
+
 These are historical migration notes for existing checkouts. New users should
 start with the [README](../README.md) and [configuration reference](configuration.md).
 

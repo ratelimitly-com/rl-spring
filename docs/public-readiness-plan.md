@@ -1,6 +1,9 @@
 # Public source and package publication
 
-The source repository is public. Maven Central publication remains separate;
+> Historical preparation record. Current dependency, registry, and publication
+> instructions are in [the release runbook](releasing.md) and the README.
+
+The source repository is public. Maven package publication remains separate;
 development uses the explicitly documented source-installed snapshots.
 Current tracking: [launch verification](https://github.com/ratelimitly-com/rl-spring/issues/1),
 [reporting design debt](https://github.com/ratelimitly-com/rl-spring/issues/2), and

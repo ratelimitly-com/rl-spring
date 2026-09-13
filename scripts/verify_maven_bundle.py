@@ -1,4 +1,4 @@
-"""Validate the actual Central-plugin bundle before any future upload is allowed."""
+"""Validate the actual Maven deployment bundle before any future upload is allowed."""
 import hashlib
 import io
 import pathlib
@@ -88,4 +88,4 @@ if __name__ == "__main__":
         count = verify_bundle(sys.argv[1], sys.argv[2])
         print(f"Verified exactly {len(ARTIFACTS)} coordinates / {count} signed artifacts; sample excluded.")
     except (OSError, ValueError, KeyError, ET.ParseError, zipfile.BadZipFile, subprocess.CalledProcessError) as error:
-        sys.exit("Central bundle rejected: " + str(error))
+        sys.exit("Maven bundle rejected: " + str(error))

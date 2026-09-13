@@ -2,7 +2,7 @@
 
 The [sample module](../ratelimitly-spring-boot-sample-app) demonstrates MVC and
 method admission in a local Spring Boot application. It is not a production
-configuration or a package intended for Maven Central publication.
+configuration or a package intended for Maven publication.
 
 First complete the [local build](../CONTRIBUTING.md#build-and-test). From the
 repository root, start the sample:

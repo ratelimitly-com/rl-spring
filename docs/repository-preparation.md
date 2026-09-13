@@ -1,5 +1,8 @@
 # Repository preparation and public transition
 
+> Historical preparation record. Current dependency, registry, and publication
+> instructions are in [the release runbook](releasing.md) and the README.
+
 This historical maintainer runbook records preparation of the initial public
 source snapshot from private main `fa323b8`, after review and merge of PR #16.
 Its original [tracking issue](https://github.com/ratelimitly-com/rl-spring-private-archive/issues/9)

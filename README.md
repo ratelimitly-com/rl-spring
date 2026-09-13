@@ -26,19 +26,40 @@ request was never processed.
 
 ## Installation and first configuration
 
-The current development version is `2.0.0-SNAPSHOT`, using the Java dependency
-`com.ratelimitly:ratelimitly-java-client:3.0.0-SNAPSHOT`.
-These versions are not published to Maven Central. For now,
-follow the [source installation instructions](CONTRIBUTING.md#build-and-test)
-before adding the starter to your application:
+The first Maven registry release, **2.0.0**, is being prepared, using
+`com.ratelimitly:ratelimitly-java-client:3.0.0`. Neither is published yet.
+Publish the Java dependency first, then Spring. Once the
+[Spring release](https://github.com/ratelimitly-com/rl-spring/releases) is available,
+add the public GitLab Maven repository and starter to your application's POM:
 
 ```xml
-<dependency>
-  <groupId>com.ratelimitly</groupId>
-  <artifactId>ratelimitly-spring-boot-starter</artifactId>
-  <version>2.0.0-SNAPSHOT</version>
-</dependency>
+<repositories>
+  <repository>
+    <id>ratelimitly-public</id>
+    <url>https://gitlab.com/api/v4/projects/86375734/packages/maven</url>
+    <releases><enabled>true</enabled></releases>
+    <snapshots><enabled>false</enabled></snapshots>
+  </repository>
+</repositories>
+
+<dependencies>
+  <dependency>
+    <groupId>com.ratelimitly</groupId>
+    <artifactId>ratelimitly-spring-boot-starter</artifactId>
+    <version>2.0.0</version>
+  </dependency>
+</dependencies>
 ```
+
+No GitLab account or download token is needed. The same registry supplies the
+transitive Java client, Spring parent POM, and autoconfigure module. Other
+dependencies still resolve from Maven Central normally.
+
+Source code and release downloads stay on GitHub. We chose GitLab's Free
+registry after Sonatype classified these service clients as requiring a paid
+publishing subscription. The MIT license is unchanged. See the
+[publication runbook](docs/releasing.md) and [contributor build
+instructions](CONTRIBUTING.md#build-and-test).
 
 The integration targets Java 21 or newer and currently builds against Spring
 Boot 4.0.5. It supports Spring MVC and Spring-managed method calls, not WebFlux
@@ -180,7 +201,7 @@ the inventory call's duration. See [latency measurement](docs/usage.md#latency-m
 - [Contributing](CONTRIBUTING.md) and [security guidance](SECURITY.md).
 
 This public repository contains the Spring integration, not the RateLimitly
-server. Maven artifacts remain development snapshots; follow the source-install
+server. Maven publication is a separate, manually approved step; follow the build
 instructions above. See the [known limitations](docs/usage.md#known-limitations)
 and [publication notes](docs/public-readiness-plan.md).
 

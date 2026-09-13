@@ -13,16 +13,11 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  # Kept in sync with .github/workflows/ci.yml.
-  # Public Java client 3.0.0-SNAPSHOT; no cross-repository secret is needed.
-  RL_JAVA_CLIENT_COMMIT: fb0b26f1e514188a569eaf8fab5685c562111bac
   RL_JAVA_CLIENT_DIR: _deps/rl-java-client
 
 jobs:
   java-client-main:
-    # The highest value job here. com.ratelimitly:ratelimitly-java-client is not in a Maven
-    # repository, so nothing but this job notices when rl-java-client main moves away from
-    # the commit ci.yml pins.
+    # Deliberately compare upstream development with the published dependency.
     name: rl-java-client/main (JDK ${{ matrix.java }})
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -59,7 +54,6 @@ jobs:
           set -eu
           resolved=$(git -C "$RL_JAVA_CLIENT_DIR" rev-parse HEAD)
           echo "rl-java-client/main commit: $resolved" >> "$GITHUB_STEP_SUMMARY"
-          echo "rl-java-client pinned in ci.yml: $RL_JAVA_CLIENT_COMMIT" >> "$GITHUB_STEP_SUMMARY"
           mvn -B -ntp -f "$RL_JAVA_CLIENT_DIR/pom.xml" install
           version=$(mvn -B -ntp -q -f "$RL_JAVA_CLIENT_DIR/pom.xml" \
             org.apache.maven.plugins:maven-help-plugin:3.5.2:evaluate \
@@ -71,8 +65,7 @@ jobs:
         run: mvn -B -ntp -Dratelimitly-java-client.version="$JAVA_CLIENT_VERSION" install
 
   latest-spring-boot:
-    # Only Spring Boot moves here; rl-java-client stays on the commit ci.yml pins so a failure
-    # is unambiguously attributable to the Spring Boot upgrade.
+    # Only Spring Boot moves here; the Java dependency stays pinned in pom.xml.
     name: latest Spring Boot (JDK ${{ matrix.java }})
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -87,14 +80,6 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          persist-credentials: false
-
-      - name: Check out pinned rl-java-client
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          repository: ratelimitly-com/rl-java-client
-          ref: ${{ env.RL_JAVA_CLIENT_COMMIT }}
-          path: ${{ env.RL_JAVA_CLIENT_DIR }}
           persist-credentials: false
 
       - name: Set up JDK ${{ matrix.java }}
@@ -129,9 +114,6 @@ jobs:
           echo "SPRING_BOOT_VERSION=$version" >> "$GITHUB_ENV"
           echo "latest Spring Boot release: $version" >> "$GITHUB_STEP_SUMMARY"
           echo "Spring Boot pinned in pom.xml: $pinned" >> "$GITHUB_STEP_SUMMARY"
-
-      - name: Install pinned rl-java-client
-        run: mvn -B -ntp -f "$RL_JAVA_CLIENT_DIR/pom.xml" install
 
       - name: Build and test against the latest Spring Boot
         run: mvn -B -ntp -Dspring-boot.version="$SPRING_BOOT_VERSION" install
