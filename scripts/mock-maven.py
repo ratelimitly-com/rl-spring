@@ -1,18 +1,25 @@
 """Loopback Maven deploy fixture: duplicate artifact PUTs fail, never proxy traffic."""
 import http.server
+import os
 import pathlib
 import sys
 import urllib.parse
 
-root = pathlib.Path(sys.argv[1])
+root = os.path.realpath(sys.argv[1])
 
 
 class Handler(http.server.BaseHTTPRequestHandler):
     def file(self):
         path = urllib.parse.unquote(urllib.parse.urlsplit(self.path).path)
-        if not path.startswith(('/first/', '/second/', '/rejected/')) or '..' in pathlib.PurePosixPath(path).parts:
+        if (not path.startswith(('/first/', '/second/', '/rejected/'))
+                or '..' in pathlib.PurePosixPath(path).parts or '\\' in path or '\x00' in path):
             raise ValueError('invalid fixture path')
-        return root / path.lstrip('/')
+        # Resolve before checking containment: lexical validation alone cannot
+        # prevent a symlink from pointing outside the private scratch directory.
+        candidate = os.path.realpath(os.path.join(root, path.lstrip('/')))
+        if not candidate.startswith(root + os.sep):
+            raise ValueError('fixture path escapes root')
+        return pathlib.Path(candidate)
 
     def do_PUT(self):
         try:

@@ -35,6 +35,7 @@ release allow-list. No server artifacts are part of this repository or release.
 python3 scripts/test_maven_bundle.py
 python3 scripts/test_publication_policy.py
 python3 scripts/test_registry.py
+python3 scripts/test_mock_maven.py
 python3 scripts/test_reviewed_artifacts.py
 SOURCE_DATE_EPOCH=$(git show -s --format=%ct HEAD) bash scripts/build-maven-dry-run.sh
 ```
@@ -42,7 +43,9 @@ SOURCE_DATE_EPOCH=$(git show -s --format=%ct HEAD) bash scripts/build-maven-dry-
 Add new files to Git's index before the dry run: it copies tracked working-tree
 files to a disposable directory. It uses an ephemeral GPG key and an empty Maven
 settings file, then executes two real Maven deployments to a loopback-only HTTP
-fixture. The fixture rejects duplicate artifact uploads. Both full test runs,
+fixture. The fixture rejects duplicate artifact uploads. Its regression tests
+also reject traversal and symlink escapes from its private
+scratch directory. Both full test runs,
 all signatures, MIT notices, POM coordinates, sample exclusion, and unsigned
 byte reproducibility must pass. The second deployment also exercises the
 reviewed-artifact gate. A final negative test changes the reviewed starter POM

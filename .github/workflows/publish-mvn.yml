@@ -52,6 +52,7 @@ jobs:
         run: |
           python3 scripts/test_publication_policy.py
           python3 scripts/test_registry.py
+          python3 scripts/test_mock_maven.py
       - name: Validate explicit release identity
         id: metadata
         env:
