@@ -26,11 +26,10 @@ request was never processed.
 
 ## Installation and first configuration
 
-The first Maven registry release, **2.0.0**, is being prepared, using
-`com.ratelimitly:ratelimitly-java-client:3.0.0`. Neither is published yet.
-Publish the Java dependency first, then Spring. Once the
-[Spring release](https://github.com/ratelimitly-com/rl-spring/releases) is available,
-add the public GitLab Maven repository and starter to your application's POM:
+[Spring 2.0.0](https://github.com/ratelimitly-com/rl-spring/releases/tag/v2.0.0)
+is available from our public GitLab Maven registry, using
+`com.ratelimitly:ratelimitly-java-client:3.0.0`. Add the repository and starter
+to your application's POM:
 
 ```xml
 <repositories>
